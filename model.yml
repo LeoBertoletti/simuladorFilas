@@ -1,53 +1,29 @@
-seed: 12345 
+seed: 1
 randomNumbersLimit: 100000
-
 queues:
-  F1:
+  Nivel1:
     servers: 1
-    capacity: -1
-    minArrival: 2.0
-    maxArrival: 4.0
-    minService: 1.0
-    maxService: 2.0
-  F2:
-    servers: 2
-    capacity: 5
+    capacity: 15
+    minArrival: 5.0
+    maxArrival: 10.0
     minService: 4.0
-    maxService: 6.0
-  F3:
+    maxService: 8.0
+  Nivel2:
     servers: 2
+    capacity: 20
+    minService: 10.0
+    maxService: 20.0
+  Laboratorio:
+    servers: 1
     capacity: 10
-    minService: 5.0
-    maxService: 15.0
-
+    minService: 20.0
+    maxService: 40.0
 arrivals:
-  queue: F1
+  queue: Nivel1
   firstTime: 2.0
-
 network:
-  # Saídas da Fila 1
-  - source: F1
-    target: F2
-    probability: 0.8
-  - source: F1
-    target: F3
-    probability: 0.2
-  
-  # Saídas da Fila 2
-  - source: F2
-    target: F1
-    probability: 0.3
-  - source: F2
-    target: null # Saída do sistema
-    probability: 0.2
-  - source: F2
-    target: F3
-    probability: 0.5
-
-  # Saídas da Fila 3
-  - source: F3
-    target: F2
-    probability: 0.7
-  - source: F3
-    target: null # Saída do sistema
-    probability: 0.3
+  - {source: Nivel1, target: null, probability: 0.6}
+  - {source: Nivel1, target: Nivel2, probability: 0.4}
+  - {source: Nivel2, target: null, probability: 0.7}
+  - {source: Nivel2, target: Laboratorio, probability: 0.3}
+  - {source: Laboratorio, target: Nivel2, probability: 1.0}
