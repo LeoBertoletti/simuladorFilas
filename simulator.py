@@ -100,7 +100,7 @@ class Simulation:
         heapq.heappush(self.events, (self.time + st, "DEPARTURE", queue.name))
 
 def main():
-    with open("modelo.yml", 'r') as f:
+    with open("model.yml", 'r') as f:
         config = yaml.safe_load(f)
     
     sim = Simulation(config)
