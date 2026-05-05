@@ -4,7 +4,7 @@ randomNumbersLimit: 100000
 queues:
   F1:
     servers: 1
-    capacity: -1
+    capacity: 1
     minArrival: 2.0
     maxArrival: 4.0
     minService: 1.0
