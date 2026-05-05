@@ -1,8 +1,15 @@
 ## Python Queue Network Simulator
 
-### 1. instalar dependencias:
-python3 -m pip install -r requirements.txt
+### 1. Instale o suporte a ambientes virtuais (se ainda não tiver)
+sudo apt update
+sudo apt install python3-venv
 
-### 2. rodar o simulador, passando o yml como parametro:
-python3 simulator.py run ../model.yml
-python3 simulator.py run ../validation-model.yml
+### 2. Crie e ative o ambiente
+python3 -m venv venv
+source venv/bin/activate
+
+### 3. Agora instale o PyYAML
+pip install pyyaml
+
+### 4. Rode o simulador
+python simulator.py model.yml
