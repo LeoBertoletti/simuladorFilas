@@ -1,118 +1,181 @@
 #!/usr/bin/env python3
+"""
+Simulador de Rede de Filas — Ana Laura, Fernanda e Leonardo
+
+Uso: python3 simulator.py model.yml
+"""
 import heapq
 import yaml
 import sys
 
-class LinearStream:
-    def __init__(self, limit, seed=1):
+# ─────────────────────────────────────────────────────────
+# Gerador LCG
+# ─────────────────────────────────────────────────────────
+class RNG:
+    def __init__(self, seed, limit):
+        self._a     = 25214903917
+        self._c     = 11
+        self._m     = 2 ** 48
+        self._state = seed & (self._m - 1)
         self._limit = limit
-        self._state = seed & 0xFFFFFFFFFFFF
         self._count = 0
-        self._multiplier = 25214903917
-        self._increment = 11
-        self._modulus = 1 << 48
 
     def has_next(self):
         return self._count < self._limit
 
     def next(self):
-        if not self.has_next(): return None
-        self._state = (self._state * self._multiplier + self._increment) & (self._modulus - 1)
+        self._state = (self._state * self._a + self._c) & (self._m - 1)
         self._count += 1
-        return float(self._state) / float(self._modulus)
+        return self._state / self._m
 
+    def uniform(self, lo, hi):
+        return lo + (hi - lo) * self.next()
+
+# ─────────────────────────────────────────────────────────
+# Fila
+# ─────────────────────────────────────────────────────────
 class Queue:
     def __init__(self, name, servers, capacity, min_s, max_s):
-        self.name = name
-        self.servers = servers
-        self.capacity = capacity
-        self.min_s = min_s
-        self.max_s = max_s
+        self.name       = name
+        self.servers    = servers
+        self.capacity   = capacity
+        self.min_s      = min_s
+        self.max_s      = max_s
         self.population = 0
-        self.lost = 0
-        self.stats = {}
-        self.routes = []
+        self.lost       = 0
+        self.stats      = {}
+        self.routes     = []
+        self.min_a      = None
+        self.max_a      = None
 
-    def update_stats(self, delta):
+    def accumulate(self, delta):
         self.stats[self.population] = self.stats.get(self.population, 0.0) + delta
 
+# ─────────────────────────────────────────────────────────
+# Simulação
+# ─────────────────────────────────────────────────────────
 class Simulation:
     def __init__(self, config):
-        self.time = 0.0
-        self.last_time = 0.0
-        self.rnd = LinearStream(config['randomNumbersLimit'], config.get('seed', 1))
+        self.time   = 0.0
         self.queues = {}
-        
-        for name, q_cfg in config['queues'].items():
-            self.queues[name] = Queue(name, q_cfg['servers'], q_cfg['capacity'], 
-                                     q_cfg['minService'], q_cfg['maxService'])
-            if 'minArrival' in q_cfg:
-                self.queues[name].min_a = q_cfg['minArrival']
-                self.queues[name].max_a = q_cfg['maxArrival']
 
-        for r in config['network']:
-            self.queues[r['source']].routes.append((r['probability'], r['target']))
+        seed  = config.get('seed', 1)
+        limit = config.get('rndnumbersPerSeed', 100000)
+        self.rng = RNG(seed, limit)
+
+        for name, q_cfg in config['queues'].items():
+            cap = q_cfg.get('capacity', None)
+            q = Queue(name,
+                      servers  = q_cfg['servers'],
+                      capacity = cap,
+                      min_s    = q_cfg['minService'],
+                      max_s    = q_cfg['maxService'])
+            if 'minArrival' in q_cfg:
+                q.min_a = q_cfg['minArrival']
+                q.max_a = q_cfg['maxArrival']
+            self.queues[name] = q
+
+        for r in config.get('network', []):
+            src  = self.queues[r['source']]
+            dest = r['target']
+            prob = r['probability']
+            src.routes.append((prob, dest))
 
         self.events = []
-        start_q = self.queues[config['arrivals']['queue']]
-        heapq.heappush(self.events, (config['arrivals']['firstTime'], "ARRIVAL", start_q.name))
+        arrivals = config['arrivals']
+        for q_name, first_time in arrivals.items():
+            heapq.heappush(self.events, (float(first_time), 'ARRIVAL', q_name))
 
-    def get_rnd(self, a, b):
-        return (b - a) * self.rnd.next() + a
+    def _route(self, queue):
+        r   = self.rng.next()
+        acc = 0.0
+        for prob, dest in queue.routes:
+            acc += prob
+            if r < acc:
+                return dest
+        return None
+
+    def _schedule_departure(self, queue):
+        st = self.rng.uniform(queue.min_s, queue.max_s)
+        heapq.heappush(self.events, (self.time + st, 'DEPARTURE', queue.name))
+
+    def _arrival(self, queue):
+        if queue.capacity is None or queue.population < queue.capacity:
+            queue.population += 1
+            if queue.population <= queue.servers:
+                self._schedule_departure(queue)
+        else:
+            queue.lost += 1
+
+        if queue.min_a is not None:
+            next_t = self.time + self.rng.uniform(queue.min_a, queue.max_a)
+            heapq.heappush(self.events, (next_t, 'ARRIVAL', queue.name))
+
+    def _departure(self, queue):
+        queue.population -= 1
+        if queue.population >= queue.servers:
+            self._schedule_departure(queue)
+
+        dest_name = self._route(queue)
+        if dest_name is not None:
+            heapq.heappush(self.events, (self.time, 'ARRIVAL', dest_name))
 
     def run(self):
-        while self.events and self.rnd.has_next():
-            t, type, q_name = heapq.heappop(self.events)
+        while self.events and self.rng.has_next():
+            t, etype, q_name = heapq.heappop(self.events)
+
             delta = t - self.time
-            for q in self.queues.values(): q.update_stats(delta)
+            for q in self.queues.values():
+                q.accumulate(delta)
             self.time = t
 
-            curr_q = self.queues[q_name]
+            q = self.queues[q_name]
+            if etype == 'ARRIVAL':
+                self._arrival(q)
+            elif etype == 'DEPARTURE':
+                self._departure(q)
 
-            if type == "ARRIVAL":
-                if curr_q.capacity == -1 or curr_q.population < curr_q.capacity:
-                    curr_q.population += 1
-                    if curr_q.population <= curr_q.servers:
-                        self.schedule_departure(curr_q)
-                else:
-                    curr_q.lost += 1
-                
-                if hasattr(curr_q, 'min_a'):
-                    next_t = self.time + self.get_rnd(curr_q.min_a, curr_q.max_a)
-                    heapq.heappush(self.events, (next_t, "ARRIVAL", curr_q.name))
+# ─────────────────────────────────────────────────────────
+# Relatório
+# ─────────────────────────────────────────────────────────
+def report(sim):
+    print("=" * 65)
+    print("  QUEUEING NETWORK SIMULATOR")
+    print(f"  Aleatórios usados : {sim.rng._count}")
+    print(f"  Tempo global      : {sim.time:.4f} min")
+    print("=" * 65)
 
-            elif type == "DEPARTURE":
-                curr_q.population -= 1
-                if curr_q.population >= curr_q.servers:
-                    self.schedule_departure(curr_q)
-                
-                # Roteamento Variável
-                r_val = self.rnd.next()
-                acc = 0
-                for prob, target in curr_q.routes:
-                    acc += prob
-                    if r_val <= acc:
-                        if target: heapq.heappush(self.events, (self.time, "ARRIVAL", target))
-                        break
+    for name, q in sim.queues.items():
+        cap_str = str(q.capacity) if q.capacity is not None else "∞"
+        print(f"\n{'*'*65}")
+        print(f"  Fila: {q.name} (G/G/{q.servers}/{cap_str})")
+        if q.min_a:
+            print(f"  Chegada : {q.min_a} ... {q.max_a}")
+        print(f"  Serviço : {q.min_s} ... {q.max_s}")
+        print(f"{'*'*65}")
+        print(f"  {'Estado':>7}  {'Tempo (min)':>18}  {'Probabilidade':>14}")
+        for state in sorted(q.stats):
+            t = q.stats[state]
+            p = (t / sim.time * 100) if sim.time > 0 else 0
+            print(f"  {state:>7}  {t:>18.4f}  {p:>13.2f}%")
+        print(f"\n  Perdas: {q.lost}")
 
-    def schedule_departure(self, queue):
-        st = self.get_rnd(queue.min_s, queue.max_s)
-        heapq.heappush(self.events, (self.time + st, "DEPARTURE", queue.name))
+    print(f"\n{'='*65}")
+    print(f"  Simulation average time: {sim.time:.4f}")
+    print("=" * 65)
 
+# ─────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────
 def main():
-    with open("model.yml", 'r') as f:
-        config = yaml.safe_load(f)
-    
+    yml_path = sys.argv[1] if len(sys.argv) > 1 else 'model.yml'
+    with open(yml_path) as f:
+        raw = f.read().replace('!PARAMETERS\n', '')
+    config = yaml.safe_load(raw)
+
     sim = Simulation(config)
     sim.run()
+    report(sim)
 
-    print(f"Tempo Global: {sim.time:.4f}\n")
-    for q in sim.queues.values():
-        print(f"Fila {q.name}: Perdas = {q.lost}")
-        for state in sorted(q.stats.keys()):
-            p = (q.stats[state] / sim.time) * 100
-            print(f"  n={state} -> Tempo: {q.stats[state]:.4f} | Prob: {p:.2f}%")
-        print("-" * 30)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
