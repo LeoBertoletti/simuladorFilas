@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Simulador de Rede de Filas — Ana Laura, Fernanda e Leonardo
-
-Uso: python3 simulator.py model.yml
+Trabalho 1 - Simulação e Métodos Analíticos
+2026/1
 """
 import heapq
 import yaml
