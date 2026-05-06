@@ -155,7 +155,7 @@ def report(sim):
         print(f"\n  Perdas: {q.lost}")
 
     print(f"\n{'='*65}")
-    print(f"  Simulation average time: {sim.time:.4f}")
+    print(f"  Tempo total de simulação: {sim.time:.4f}")
     print("=" * 65)
 
 
