@@ -13,3 +13,6 @@ pip install pyyaml
 
 ### 4. Rode o simulador
 python simulator.py model.yml
+
+### 5. Rodar o simulador e gerar um arquivo .txt com as respostas
+python simulator.py model.yml > resultado.txt   
