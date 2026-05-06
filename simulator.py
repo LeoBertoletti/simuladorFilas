@@ -8,9 +8,7 @@ import heapq
 import yaml
 import sys
 
-# ─────────────────────────────────────────────────────────
-# Gerador LCG
-# ─────────────────────────────────────────────────────────
+
 class RNG:
     def __init__(self, seed, limit):
         self._a     = 25214903917
@@ -31,9 +29,7 @@ class RNG:
     def uniform(self, lo, hi):
         return lo + (hi - lo) * self.next()
 
-# ─────────────────────────────────────────────────────────
-# Fila
-# ─────────────────────────────────────────────────────────
+
 class Queue:
     def __init__(self, name, servers, capacity, min_s, max_s):
         self.name       = name
@@ -51,15 +47,12 @@ class Queue:
     def accumulate(self, delta):
         self.stats[self.population] = self.stats.get(self.population, 0.0) + delta
 
-# ─────────────────────────────────────────────────────────
-# Simulação
-# ─────────────────────────────────────────────────────────
+
 class Simulation:
-    def __init__(self, config):
+    def __init__(self, config, seed):
         self.time   = 0.0
         self.queues = {}
 
-        seed  = config.get('seed', 1)
         limit = config.get('rndnumbersPerSeed', 100000)
         self.rng = RNG(seed, limit)
 
@@ -99,7 +92,7 @@ class Simulation:
         st = self.rng.uniform(queue.min_s, queue.max_s)
         heapq.heappush(self.events, (self.time + st, 'DEPARTURE', queue.name))
 
-    def _arrival(self, queue):
+    def _arrival(self, queue, is_external=True):
         if queue.capacity is None or queue.population < queue.capacity:
             queue.population += 1
             if queue.population <= queue.servers:
@@ -107,7 +100,8 @@ class Simulation:
         else:
             queue.lost += 1
 
-        if queue.min_a is not None:
+        # Só gera nova chegada externa se for chegada do mundo externo
+        if is_external and queue.min_a is not None:
             next_t = self.time + self.rng.uniform(queue.min_a, queue.max_a)
             heapq.heappush(self.events, (next_t, 'ARRIVAL', queue.name))
 
@@ -118,7 +112,7 @@ class Simulation:
 
         dest_name = self._route(queue)
         if dest_name is not None:
-            heapq.heappush(self.events, (self.time, 'ARRIVAL', dest_name))
+            heapq.heappush(self.events, (self.time, 'ARRIVAL_INTERNAL', dest_name))
 
     def run(self):
         while self.events and self.rng.has_next():
@@ -131,13 +125,13 @@ class Simulation:
 
             q = self.queues[q_name]
             if etype == 'ARRIVAL':
-                self._arrival(q)
+                self._arrival(q, is_external=True)
+            elif etype == 'ARRIVAL_INTERNAL':
+                self._arrival(q, is_external=False)
             elif etype == 'DEPARTURE':
                 self._departure(q)
 
-# ─────────────────────────────────────────────────────────
-# Relatório
-# ─────────────────────────────────────────────────────────
+
 def report(sim):
     print("=" * 65)
     print("  QUEUEING NETWORK SIMULATOR")
@@ -164,18 +158,19 @@ def report(sim):
     print(f"  Simulation average time: {sim.time:.4f}")
     print("=" * 65)
 
-# ─────────────────────────────────────────────────────────
-# Main
-# ─────────────────────────────────────────────────────────
+
 def main():
     yml_path = sys.argv[1] if len(sys.argv) > 1 else 'model.yml'
     with open(yml_path) as f:
         raw = f.read().replace('!PARAMETERS\n', '')
     config = yaml.safe_load(raw)
 
-    sim = Simulation(config)
-    sim.run()
-    report(sim)
+    seeds = config.get('seeds', [1])
+    for seed in seeds:
+        print(f"\n=== Seed: {seed} ===")
+        sim = Simulation(config, seed)
+        sim.run()
+        report(sim)
 
 if __name__ == '__main__':
     main()

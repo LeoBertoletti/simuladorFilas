@@ -28,7 +28,7 @@ network:
    target: F3
    probability: 0.2
 -  source: F2
-   target: F2
+   target: F1
    probability: 0.3
 -  source: F2
    target: F3
